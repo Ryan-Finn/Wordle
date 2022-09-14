@@ -1,129 +1,9 @@
 from cProfile import Profile
 from csv import reader
+from joblib import Parallel, delayed, cpu_count
 from pstats import Stats, SortKey
 
-from joblib import Parallel, delayed
-
-
-def getPattern(word, word2):
-    pattern = [2, 2, 2, 2, 2]
-    inds = [0, 1, 2, 3, 4]
-    inds2 = [0, 1, 2, 3, 4]
-
-    for i in range(0, 5):
-        if word[i] == word2[i]:
-            pattern[i] = 0
-            inds.remove(i)
-            inds2.remove(i)
-
-    while True:
-        fail = False
-
-        for i in inds:
-            for j in inds2:
-                if word[i] == word2[j]:
-                    pattern[i] = 1
-                    inds.remove(i)
-                    inds2.remove(j)
-                    fail = True
-                    break
-
-            if fail:
-                break
-
-        if not fail:
-            break
-
-    pattern = ''.join(map(str, pattern))
-    return pattern
-
-
-def filterGray(oldPoss, word, pattern):
-    possible = []
-    counts = dict()
-    atLeast = True
-    exactly = False
-
-    for letter in word:
-        if letter in counts:
-            counts[letter][1] += 1
-        else:
-            counts[letter] = [atLeast, 1]
-
-    for ind, state in enumerate(pattern):
-        if state == "2":
-            counts[word[ind]][0] = exactly
-            counts[word[ind]][1] -= 1
-
-    for word2 in oldPoss:
-        if word == word2:
-            continue
-
-        counts2 = dict()
-        for letter in counts:
-            if letter not in counts2:
-                counts2[letter] = 0
-
-            for i in range(0, 5):
-                if letter == word2[i]:
-                    counts2[letter] += 1
-
-        fail = False
-        for letter, count in counts.items():
-            if count[0]:
-                if count[1] > counts2[letter]:
-                    fail = True
-                    break
-            else:
-                if count[1] != counts2[letter]:
-                    fail = True
-                    break
-
-        if not fail:
-            possible.append(word2)
-
-    return possible
-
-
-def filterGold(oldPoss, word, pattern):
-    possible = []
-
-    for word2 in oldPoss:
-        fail = False
-
-        for i in range(0, 5):
-            if pattern[i] == "1" and word[i] == word2[i]:
-                fail = True
-                break
-
-        if not fail:
-            possible.append(word2)
-
-    return possible
-
-
-def filterGreen(oldPoss, word, pattern):
-    possible = []
-
-    for word2 in oldPoss:
-        allGreen = True
-
-        for i in range(0, 5):
-            if pattern[i] == "0" and word[i] != word2[i]:
-                allGreen = False
-
-        if allGreen:
-            possible.append(word2)
-
-    return possible
-
-
-def filterPoss(oldPoss, word, pattern):
-    possible = filterGray(oldPoss, word, pattern)
-    possible = filterGold(possible, word, pattern)
-    possible = filterGreen(possible, word, pattern)
-
-    return possible
+from lib import getPattern, filterPoss
 
 
 def func(guess1, wordle, possible, fullDict):
@@ -137,7 +17,7 @@ def func(guess1, wordle, possible, fullDict):
         return
 
     for guess2 in fullDict:
-        if guess2 == wordle:
+        if guess2 == wordle or guess2 == guess1:
             continue
 
         pattern = getPattern(guess2, wordle)
@@ -154,19 +34,24 @@ def main():
     fullDict = []
     solutions = []
     possible = []
-
+    i = 0
     try:
         with open("words.csv") as file:
             for line in reader(file):
                 for word in line:
-                    solutions.append(word)
+                    i += 1
+                    if i >= 2153:
+                        solutions.append(word)
                     possible.append(word)
+                    fullDict.append(word)
     except IOError as err:
         print(err)
         return
 
+    # known 2153
+
     try:
-        with open("words2.csv") as file:
+        with open("words.csv") as file:
             for line in reader(file):
                 for word in line:
                     openers.add(word)
@@ -176,8 +61,9 @@ def main():
         return
 
     i = 0
-    print(len(openers))
-    with Parallel(n_jobs=4, backend='multiprocessing') as parallel:
+    print("Processors:", cpu_count())
+    print("Openers:", len(openers))
+    with Parallel(n_jobs=cpu_count(), backend='multiprocessing') as parallel:
         for wordle in solutions:
             i += 1
 
